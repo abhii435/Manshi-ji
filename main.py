@@ -10,95 +10,96 @@ GEMINI_KEY = 'AIzaSyDu6I8LvCycmP3qm0luG39wlS-Exzd1ztI'
 OWNER_ID = 7662143324
 
 bot = telebot.TeleBot(BOT_TOKEN)
+genai.configure(api_key=GEMINI_KEY)
 
-# --- GEMINI SETUP ---
-try:
-    genai.configure(api_key=GEMINI_KEY)
-    # Model configuration with no safety blocks
-    generation_config = {
-        "temperature": 0.9,
-        "top_p": 1,
-        "top_k": 1,
-        "max_output_tokens": 2048,
-    }
-    safety_settings = [
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    ]
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        generation_config=generation_config,
-        safety_settings=safety_settings
-    )
-except Exception as e:
-    print(f"Gemini Init Error: {e}")
-
-# --- GROUP ID STORAGE ---
+# --- ID STORAGE SYSTEM ---
 ID_FILE = "groups_list.txt"
 def save_id(chat_id):
     try:
-        with open(ID_FILE, "a+") as f:
-            f.seek(0)
+        if not os.path.exists(ID_FILE): open(ID_FILE, 'w').close()
+        with open(ID_FILE, "r+") as f:
             ids = f.read().splitlines()
             if str(chat_id) not in ids:
                 f.write(f"{chat_id}\n")
     except: pass
 
-# --- SMART FALLBACK MESSAGES ---
-fallback_replies = [
-    "Hmm, sahi keh rahe ho! 😂", "Achha? Phir kya hua?", "Arre waah, ye mast tha!",
-    "Mujhe bhi aisa hi lagta hai... ✨", "Bolte raho, main sun rahi hoon. 😉",
-    "Haha, tum kaafi funny ho!", "Thoda busy thi, ab bolo kya haal hai?"
-]
-
-# --- HANDLERS ---
+# --- COMMANDS ---
+@bot.message_handler(commands=['id'])
+def get_id(message):
+    bot.reply_to(message, f"Chat ID: `{message.chat.id}`")
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast(message):
     if message.from_user.id == OWNER_ID:
         text = message.text.replace('/broadcast', '').strip()
         if not text: return
-        if os.path.exists(ID_FILE):
-            with open(ID_FILE, "r") as f:
-                for gid in f.read().splitlines():
-                    try:
-                        bot.send_message(gid, text)
-                        time.sleep(0.3)
-                    except: pass
-        bot.reply_to(message, "✅ Done!")
+        with open(ID_FILE, "r") as f:
+            for gid in f.read().splitlines():
+                try: bot.send_message(gid, text); time.sleep(0.3)
+                except: pass
+        bot.reply_to(message, "✅ Sabko bhej diya!")
+
+@bot.message_handler(commands=['send'])
+def send_msg(message):
+    if message.from_user.id == OWNER_ID:
+        try:
+            parts = message.text.split(' ', 2)
+            bot.send_message(parts[1], parts[2])
+            bot.reply_to(message, "✅ Message Sent!")
+        except: bot.reply_to(message, "Format: `/send ID Message`")
+
+# --- 100% AUTO REPLY ENGINE ---
 
 @bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
+def auto_reply(message):
+    # Do not reply to other bots
     if message.from_user.is_bot: return
+    
+    # Save Group ID automatically
     if message.chat.type in ['group', 'supergroup']:
         save_id(message.chat.id)
 
-    # 1. Action: Typing & Reaction
     try:
+        # 1. Feel like a Human: Typing & Reaction
         bot.send_chat_action(message.chat.id, 'typing')
-        bot.set_message_reaction(message.chat.id, message.message_id, [telebot.types.ReactionTypeEmoji('❤')], is_big=False)
-    except: pass
-
-    # 2. AI Response Logic
-    reply_sent = False
-    try:
-        # Prompt for Manshi's personality
-        prompt = f"You are Manshi, a cool desi girl. Reply shortly in Hinglish: {message.text}"
-        response = model.generate_content(prompt)
         
+        # Random Reaction (Cute vibes)
+        try:
+            emojis = ['❤️', '✨', '🔥', '😂', '🌸']
+            bot.set_message_reaction(message.chat.id, message.message_id, [telebot.types.ReactionTypeEmoji(random.choice(emojis))], is_big=False)
+        except: pass
+
+        # 2. AI Prompt Design
+        # Personality: Desi, Friendly, 20yr old girl
+        prompt = (
+            f"You are Manshi, a cool and friendly 20-year-old Indian girl. "
+            f"Reply to this message in natural, short Hinglish (1-2 lines max). "
+            f"Be sweet but witty. User says: {message.text}"
+        )
+
+        # Gemini Configuration
+        safety = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+        
+        model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety)
+        response = model.generate_content(prompt)
+
+        # 3. Final Output Logic
         if response and response.text:
             bot.reply_to(message, response.text)
-            reply_sent = True
-    except Exception as e:
-        print(f"AI Error: {e}")
+        else:
+            # Fallback if Gemini blocks the Hinglish slang
+            bot.reply_to(message, "Arre, abhi thoda busy hoon, baad mein baat karein? 😉")
 
-    # 3. SUPER FALLBACK: If AI fails, send a manual reply (100% guarantee)
-    if not reply_sent:
-        time.sleep(1)
-        bot.reply_to(message, random.choice(fallback_replies))
+    except Exception as e:
+        print(f"Error: {e}")
+        # Final emergency reply so bot never stays silent
+        bot.reply_to(message, "Hmm, sahi hai! 😂")
 
 if __name__ == "__main__":
-    print("Manshi AI is Online and 100% Ready!")
+    print("Manshi Auto-Reply is Online!")
     bot.infinity_polling(skip_pending=True)
