@@ -1,16 +1,17 @@
 import telebot
-import google.generativeai as genai
+from groq import Groq
 import time
 import os
 import random
 
-# --- [ CONFIG ] ---
-BOT_TOKEN = '8386752629:AAFtI0gvAVD171v4qb44EW_cg2sYeDjDT0E'
-GEMINI_KEY = 'AIzaSyDu6I8LvCycmP3qm0luG39wlS-Exzd1ztI' 
-OWNER_ID = 7662143324
+# --- [ CONFIG FROM ENVIRONMENT VARIABLES ] ---
+# Railway ke dashboard par ye keys add karni hongi
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+GROQ_KEY = os.getenv('GROQ_KEY')
+OWNER_ID = int(os.getenv('OWNER_ID', '7662143324'))
 
 bot = telebot.TeleBot(BOT_TOKEN)
-genai.configure(api_key=GEMINI_KEY)
+client = Groq(api_key=GROQ_KEY)
 ID_FILE = "groups_list.txt"
 
 # Memory management
@@ -31,7 +32,7 @@ def broadcast(message):
     if message.from_user.id == OWNER_ID:
         text = message.text.replace('/broadcast', '').strip()
         if not text:
-            bot.reply_to(message, "Kuch likho toh sahi!")
+            bot.reply_to(message, "Arre, kuch message toh likho!")
             return
         
         count = 0
@@ -58,42 +59,38 @@ def handle_all(message):
         
         # Initialize memory if not exists
         if chat_id not in chat_histories:
-            chat_histories[chat_id] = []
+            chat_histories[chat_id] = [
+                {"role": "system", "content": "You are Manshi, a funny and emotional Indian girl. Reply in short Hinglish. Act like a real person, never mention you are an AI or a bot."}
+            ]
             
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Logical Instruction: No repetition, human-like flow
-        prompt = (
-            f"User name: {message.from_user.first_name}. "
-            "You are Manshi, a funny and emotional Indian girl. "
-            "Rules: 1. Don't repeat previous lines. 2. Give short, fresh Hinglish replies. "
-            "3. Act like a real person, not a bot. 4. If user says 'hi', don't just say 'hi', say something more."
-            f"\nUser says: {message.text}"
+        chat_histories[chat_id].append({"role": "user", "content": message.text})
+
+        # Groq Call
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=chat_histories[chat_id],
+            temperature=0.8
         )
         
-        # Start chat with history
-        convo = model.start_chat(history=chat_histories[chat_id])
-        response = convo.send_message(prompt)
-        
-        if response.text:
-            # Update memory and keep it limited to last 10 messages to avoid confusion
-            chat_histories[chat_id] = convo.history[-10:]
-            bot.reply_to(message, response.text)
+        response_text = completion.choices[0].message.content
+
+        if response_text:
+            chat_histories[chat_id].append({"role": "assistant", "content": response_text})
             
-            # --- Random Sticker Logic (Feelings) ---
-            if random.random() < 0.3: # 30% chance to send sticker
-                sticker_list = [
-                    "CAACAgIAAxkBAAELy_Vlz87v7Z-S9Y4S_vUv8S9Y4S_vUv8", # Happy
-                    "CAACAgIAAxkBAAELy_dlz89P_vUv8S9Y4S_vUv8S9Y4S_vUv8"  # Fun
-                ]
+            # Limit memory
+            if len(chat_histories[chat_id]) > 10:
+                chat_histories[chat_id] = [chat_histories[chat_id][0]] + chat_histories[chat_id][-8:]
+
+            bot.reply_to(message, response_text)
+            
+            if random.random() < 0.2:
+                sticker_list = ["CAACAgIAAxkBAAELy_Vlz87v7Z-S9Y4S_vUv8S9Y4S_vUv8", "CAACAgIAAxkBAAELy_dlz89P_vUv8S9Y4S_vUv8S9Y4S_vUv8"]
                 bot.send_sticker(chat_id, random.choice(sticker_list))
-        else:
-            bot.reply_to(message, "Arre, kuch logical bolo na! 😉")
 
     except Exception as e:
         print(f"Error: {e}")
-        bot.reply_to(message, "Abhi mood nahi hai baat karne ka! 😂")
+        bot.reply_to(message, "Yrr, Manshi ka dimaag garam ho gaya hai! 😂")
 
 if __name__ == "__main__":
-    bot.remove_webhook()
+    print("Bot is starting...")
     bot.infinity_polling(skip_pending=True)
