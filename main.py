@@ -1,122 +1,86 @@
 import telebot
 import google.generativeai as genai
-import random
 import time
 import os
-import requests
+import random
 
-# --- [ CONFIGURATION ] ---
+# --- [ CONFIG ] ---
 BOT_TOKEN = '8386752629:AAFtI0gvAVD171v4qb44EW_cg2sYeDjDT0E'
 GEMINI_KEY = 'AIzaSyDu6I8LvCycmP3qm0luG39wlS-Exzd1ztI' 
 OWNER_ID = 7662143324
 
 bot = telebot.TeleBot(BOT_TOKEN)
 genai.configure(api_key=GEMINI_KEY)
-
-# Memory Storage
-chat_histories = {} 
 ID_FILE = "groups_list.txt"
+
+# Memory dictionary for feelings and context
+chat_histories = {}
+
+# --- [ STICKER BANK ] ---
+# Ye stickers Manshi ke emotions dikhayenge
+stickers = {
+    "happy": ["CAACAgIAAxkBAAEL...", "CAACAgIAAxkBAAEL..."], # Yahan sticker file_id daal sakte ho
+    "love": ["CAACAgIAAxkBAAEP...", "CAACAgEAAxkBAAE..."],
+    "funny": ["CAACAgIAAxkBAAEJ...", "CAACAgIAAxkBAAE..."],
+    "sad": ["CAACAgIAAxkBAAE..."]
+}
 
 # --- [ UTILS ] ---
 def save_id(chat_id):
-    try:
-        if not os.path.exists(ID_FILE): open(ID_FILE, 'w').close()
-        with open(ID_FILE, "r+") as f:
-            ids = f.read().splitlines()
-            if str(chat_id) not in ids:
-                f.write(f"{chat_id}\n")
-    except: pass
+    if not os.path.exists(ID_FILE): open(ID_FILE, 'w').close()
+    with open(ID_FILE, "r+") as f:
+        ids = f.read().splitlines()
+        if str(chat_id) not in ids:
+            f.write(f"{chat_id}\n")
 
-# --- [ COMMAND HANDLERS ] ---
-
-@bot.message_handler(commands=['id'])
-def get_id(message):
-    bot.reply_to(message, f"📍 Chat ID: `{message.chat.id}`")
-
-@bot.message_handler(commands=['broadcast'])
-def broadcast(message):
-    if message.from_user.id == OWNER_ID:
-        text = message.text.replace('/broadcast', '').strip()
-        if not text: return
-        with open(ID_FILE, "r") as f:
-            for gid in f.read().splitlines():
-                try: bot.send_message(gid, text); time.sleep(0.3)
-                except: pass
-        bot.reply_to(message, "✅ Broadcast Successful!")
-
-@bot.message_handler(commands=['send'])
-def send_msg(message):
-    if message.from_user.id == OWNER_ID:
-        try:
-            _, target, msg = message.text.split(' ', 2)
-            bot.send_message(target, msg)
-            bot.reply_to(message, "✅ Message Delivered!")
-        except: bot.reply_to(message, "Format: `/send ID Message`")
-
-@bot.message_handler(commands=['draw'])
-def draw(message):
-    prompt = message.text.replace('/draw', '').strip()
-    if not prompt:
-        bot.reply_to(message, "Kya banau? Example: `/draw space cat`")
-        return
-    bot.send_chat_action(message.chat.id, 'upload_photo')
-    img_url = f"https://pollinations.ai/p/{prompt.replace(' ', '%20')}?width=1024&height=1024&seed={random.randint(1,9999)}"
-    bot.send_photo(message.chat.id, img_url, caption=f"Ye lo baby tumhare liye: {prompt}")
-
-@bot.message_handler(content_types=['new_chat_members'])
-def welcome(message):
-    for user in message.new_chat_members:
-        bot.reply_to(message, f"Swagat karo {user.first_name} ka! ✨ Manshi ke group mein aa gaye ho, ab maze karo! 😉")
-
-# --- [ THE BRAIN: AUTO-REPLY + MEMORY ] ---
-
+# --- [ AUTO REPLY WITH HUMAN FEELINGS ] ---
 @bot.message_handler(func=lambda message: True)
-def auto_reply(message):
+def handle_all(message):
     if message.from_user.is_bot or message.text.startswith('/'): return
     
     chat_id = message.chat.id
     if message.chat.type in ['group', 'supergroup']: save_id(chat_id)
 
-    # Initialize history if not present
-    if chat_id not in chat_histories:
-        chat_histories[chat_id] = []
-
     try:
+        # 1. Typing Feeling
         bot.send_chat_action(chat_id, 'typing')
         
-        # Safety Settings (Unfiltered)
-        safety = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ]
-
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash", safety_settings=safety)
-        
-        # Start chat with memory
+        # 2. Memory Setup
+        if chat_id not in chat_histories:
+            chat_histories[chat_id] = []
+            
+        model = genai.GenerativeModel('gemini-1.5-flash')
         convo = model.start_chat(history=chat_histories[chat_id])
         
-        # Human-like Prompt
-        full_prompt = (
-            f"You are Manshi, a 20yo cool Indian girl. Reply to {message.from_user.first_name} "
-            f"in very short, witty Hinglish. Remember previous context. "
-            f"Message: {message.text}"
+        # 3. Prompt for Human Emotions
+        prompt = (
+            f"You are Manshi, a 20-year-old girl with deep feelings. "
+            f"Talk to {message.from_user.first_name} like a real human, not a bot. "
+            f"Use Hinglish, show emotions (joy, anger, love, or sarcasm). "
+            f"Keep it short and very natural. Current message: {message.text}"
         )
         
-        response = convo.send_message(full_prompt)
+        response = convo.send_message(prompt)
         
         if response.text:
-            # Update memory (keeping last 12 exchanges)
-            chat_histories[chat_id] = convo.history[-12:]
+            chat_histories[chat_id] = convo.history[-10:]
+            
+            # 4. RANDOM STICKER REACTION (Feelings)
+            # Agar message mein 'pyar', 'love', 'haha', 'sad' jaisa kuch hai toh sticker bhejegi
+            res_low = response.text.lower()
             bot.reply_to(message, response.text)
-        else:
-            bot.reply_to(message, "Achha? Phir se bolna... 😉")
+
+            # Stickers bhejne ka logic (Emoji reactions)
+            if any(word in res_low for word in ["love", "pyar", "heart", "❤️"]):
+                bot.send_sticker(chat_id, "CAACAgIAAxkBAAELy_Vlz87v7Z-S9Y4S_vUv8S9Y4S_vUv8") # Example Sticker ID
+            elif any(word in res_low for word in ["haha", "funny", "😂", "lol"]):
+                bot.send_sticker(chat_id, "CAACAgIAAxkBAAELy_dlz89P_vUv8S9Y4S_vUv8S9Y4S_vUv8")
 
     except Exception as e:
         print(f"Error: {e}")
-        bot.reply_to(message, "Hmm, sahi hai! 😂")
+        bot.reply_to(message, "Arre yaar, dimaag kharab ho gaya mera! 😂")
 
 if __name__ == "__main__":
-    print("🚀 Manshi High-Class Bot is LIVE!")
+    print("🚀 Manshi (The Human) is LIVE!")
+    bot.remove_webhook()
     bot.infinity_polling(skip_pending=True)
