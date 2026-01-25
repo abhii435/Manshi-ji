@@ -8,13 +8,10 @@ BOT_TOKEN = '8386752629:AAFtI0gvAVD171v4qb44EW_cg2sYeDjDT0E'
 GEMINI_KEY = 'AIzaSyBa1VEEiERuBXVMG9pI-zucTsBSDKNCIQw' 
 OWNER_ID = 7662143324
 
-# --- SETUP ---
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# Gemini Configuration
 genai.configure(api_key=GEMINI_KEY)
 
-# Safety Settings: Taaki Gemini kisi bhi baat par chup na ho
+# Anti-Block Safety Settings
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -22,15 +19,11 @@ safety_settings = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-# Updated Model Name to fix the 404 error
-model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash-latest',
-    safety_settings=safety_settings
-)
+model = genai.GenerativeModel(model_name='gemini-1.5-flash-latest', safety_settings=safety_settings)
 
+# Global set for group IDs
 group_ids = set()
 
-# 1. Broadcast Command
 @bot.message_handler(commands=['broadcast'])
 def broadcast(message):
     if message.from_user.id == OWNER_ID:
@@ -39,40 +32,42 @@ def broadcast(message):
             bot.reply_to(message, "Message likho! Example: /broadcast Hello")
             return
         
+        if not group_ids:
+            bot.reply_to(message, "Abhi koi group ID save nahi hai. Pehle groups mein ek message karo!")
+            return
+
         send_count = 0
         for cid in list(group_ids):
             try:
                 bot.send_message(cid, text)
                 send_count += 1
                 time.sleep(0.3)
-            except: pass
-        bot.reply_to(message, f"✅ Done! {send_count} groups mein bhej diya.")
+            except Exception as e:
+                print(f"Broadcast failed for {cid}: {e}")
+        
+        bot.reply_to(message, f"✅ Broadcast Done! Total {send_count} groups mein bhej diya gaya.")
 
-# 2. Main Chat & Reaction Logic
 @bot.message_handler(func=lambda message: True)
 def handle_msg(message):
+    # ID save karna
     if message.chat.type in ['group', 'supergroup']:
         group_ids.add(message.chat.id)
 
     try:
-        # A. Reaction
-        emo = ['❤️', '🔥', '✨', '😎', '💯', '🌸']
+        # Reaction
+        emo = ['❤️', '🔥', '✨', '🌸', '💯']
         bot.set_message_reaction(message.chat.id, message.message_id, [telebot.types.ReactionTypeEmoji(random.choice(emo))])
         
-        # B. AI Reply
-        prompt = f"User: {message.text}. You are Manshi, a cool Indian girl. Reply in short, funny Hinglish."
+        # AI Reply
+        prompt = f"You are Manshi, a cool girl. Reply in short Hinglish: {message.text}"
         response = model.generate_content(prompt)
         
         if response and response.text:
             bot.reply_to(message, response.text)
-        else:
-            bot.reply_to(message, "Hmm... samajh nahi aaya. 😅")
-
+            
     except Exception as e:
-        print(f"Error occurred: {e}")
+        print(f"Error: {e}")
 
-# --- START BOT ---
 if __name__ == "__main__":
-    print("Manshi AI is Online on Railway!")
-    # skip_pending=True fixes the 409 Conflict error
+    print("Manshi is Online!")
     bot.infinity_polling(skip_pending=True)
