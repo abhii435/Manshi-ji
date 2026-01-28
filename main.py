@@ -104,7 +104,8 @@ def handle_all(message):
         chat_histories[memory_key].append({"role": "user", "content": message.text})
 
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+
+          model="llama-3-8b-8192",
             messages=chat_histories[memory_key],
             temperature=0.9,
             max_tokens=45
