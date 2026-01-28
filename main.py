@@ -109,7 +109,8 @@ def handle_all(message):
 
         # Groq Llama-3.3-70b (Sabse smart aur fast model)
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+
+     model="llama-3.1-8b-instant",
             messages=chat_histories[memory_key],
             temperature=1.0, # High creativity for unique answers
             max_tokens=45
