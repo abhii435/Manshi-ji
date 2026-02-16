@@ -1,2 +1,4 @@
+
 pyTelegramBotAPI
-groq
+google-generativeai
+pymongo[srv]
